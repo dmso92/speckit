@@ -1,0 +1,570 @@
+openapi: 3.1.0
+info:
+  title: Purchase Order Management API
+  version: 1.0.0
+  description: >
+    REST contract for drafting, submitting, approving, fulfilling, cancelling,
+    and tracking purchase orders. Branch, supplier, product catalog, and
+    identity services are host integrations and are not defined by this API.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Purchase Orders
+  - name: Supplier Notifications
+paths:
+  /purchase-orders:
+    get:
+      tags: [Purchase Orders]
+      summary: List purchase orders visible to the authenticated actor
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/PurchaseOrderStatus"
+        - name: branchId
+          in: query
+          schema:
+            type: string
+        - name: supplierId
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+      responses:
+        "200":
+          description: Visible purchase orders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrderPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Purchase Orders]
+      summary: Create a draft purchase order
+      description: >
+        An incomplete draft may be saved for later editing. Supplied line
+        quantities and prices must be valid. Totals are calculated by the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDraftRequest"
+      responses:
+        "201":
+          description: Draft created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /purchase-orders/{purchaseOrderId}:
+    parameters:
+      - $ref: "#/components/parameters/PurchaseOrderId"
+    get:
+      tags: [Purchase Orders]
+      summary: Get a purchase order and its current decision details
+      responses:
+        "200":
+          description: Purchase order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Purchase Orders]
+      summary: Update a draft purchase order
+      description: Only Draft orders may be edited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDraftRequest"
+      responses:
+        "200":
+          description: Updated draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /purchase-orders/{purchaseOrderId}/submit:
+    parameters:
+      - $ref: "#/components/parameters/PurchaseOrderId"
+    post:
+      tags: [Purchase Orders]
+      summary: Submit a valid draft
+      description: >
+        Requires branch, supplier, and at least one valid line item. Submission
+        creates a supplier portal notification and email delivery record
+        atomically with the status change. Email delivery occurs after commit.
+      responses:
+        "200":
+          description: Submitted order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /purchase-orders/{purchaseOrderId}/approval-decisions:
+    parameters:
+      - $ref: "#/components/parameters/PurchaseOrderId"
+    post:
+      tags: [Purchase Orders]
+      summary: Record a final approval or rejection decision
+      description: >
+        Available only for submitted orders over USD 10,000 and only to a
+        designated organization-wide approver other than the submitting buyer.
+        Rejection is recorded while the PO status remains Submitted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalDecisionRequest"
+      responses:
+        "200":
+          description: Order and recorded decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /purchase-orders/{purchaseOrderId}/fulfill:
+    parameters:
+      - $ref: "#/components/parameters/PurchaseOrderId"
+    post:
+      tags: [Purchase Orders]
+      summary: Mark an eligible purchase order fulfilled
+      description: >
+        High-value orders require an Approved decision. Rejected high-value
+        orders remain Submitted and cannot be fulfilled.
+      responses:
+        "200":
+          description: Fulfilled order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /purchase-orders/{purchaseOrderId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/PurchaseOrderId"
+    post:
+      tags: [Purchase Orders]
+      summary: Cancel a Draft, Submitted, or Approved order
+      responses:
+        "200":
+          description: Cancelled order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /supplier-notifications:
+    get:
+      tags: [Supplier Notifications]
+      summary: List notifications for the authenticated supplier
+      description: Supplier scope is derived from authenticated identity; callers cannot select another supplier.
+      parameters:
+        - name: unreadOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+      responses:
+        "200":
+          description: Supplier-scoped notification page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierNotificationPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /supplier-notifications/{notificationId}/read:
+    parameters:
+      - name: notificationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [Supplier Notifications]
+      summary: Mark an owned supplier notification as read
+      responses:
+        "204":
+          description: Notification marked read
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Host identity provider; token format, issuer, and claims are not defined by this feature.
+  parameters:
+    PurchaseOrderId:
+      name: purchaseOrderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Unauthorized:
+      description: Authentication is required or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Forbidden:
+      description: Actor is authenticated but not authorized for this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: Resource does not exist or is not visible to this actor.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Conflict:
+      description: Requested lifecycle transition is not allowed or state is stale.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    ValidationError:
+      description: Request values or referenced catalog data are invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+  schemas:
+    PurchaseOrderStatus:
+      type: string
+      enum: [Draft, Submitted, Approved, Fulfilled, Cancelled]
+    ApprovalValue:
+      type: string
+      enum: [Approved, Rejected]
+    CreateDraftRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        branchId:
+          type: [string, "null"]
+          minLength: 1
+        supplierId:
+          type: [string, "null"]
+          minLength: 1
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DraftLineInput"
+    UpdateDraftRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        branchId:
+          type: [string, "null"]
+          minLength: 1
+        supplierId:
+          type: [string, "null"]
+          minLength: 1
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DraftLineInput"
+    DraftLineInput:
+      type: object
+      additionalProperties: false
+      required: [productId, quantity, unitPriceCents]
+      properties:
+        productId:
+          type: string
+          minLength: 1
+        quantity:
+          type: integer
+          minimum: 1
+          description: Positive whole-unit quantity; fractional quantity support requires product confirmation.
+        unitPriceCents:
+          type: integer
+          minimum: 0
+          description: Expected USD unit price in cents.
+    ApprovalDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision:
+          $ref: "#/components/schemas/ApprovalValue"
+        reason:
+          type: string
+          maxLength: 2000
+    PurchaseOrderLine:
+      type: object
+      required: [id, productId, productName, quantity, unitPriceCents, lineTotalCents]
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+        productName:
+          type: string
+        sku:
+          type: [string, "null"]
+        quantity:
+          type: integer
+          minimum: 1
+        unitPriceCents:
+          type: integer
+          minimum: 0
+        lineTotalCents:
+          type: integer
+          minimum: 0
+    ApprovalDecision:
+      type: object
+      required: [decision, approverId, decidedAt]
+      properties:
+        decision:
+          $ref: "#/components/schemas/ApprovalValue"
+        approverId:
+          type: string
+        decidedAt:
+          type: string
+          format: date-time
+        reason:
+          type: [string, "null"]
+    PurchaseOrder:
+      type: object
+      required: [id, orderNumber, branchId, supplierId, createdBy, status, currency, items, totalCents, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+        branchId:
+          type: [string, "null"]
+        supplierId:
+          type: [string, "null"]
+        createdBy:
+          type: string
+        status:
+          $ref: "#/components/schemas/PurchaseOrderStatus"
+        currency:
+          type: string
+          const: USD
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseOrderLine"
+        totalCents:
+          type: integer
+          minimum: 0
+        approvalDecision:
+          anyOf:
+            - $ref: "#/components/schemas/ApprovalDecision"
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        submittedAt:
+          type: [string, "null"]
+          format: date-time
+        fulfilledAt:
+          type: [string, "null"]
+          format: date-time
+        cancelledAt:
+          type: [string, "null"]
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+    PurchaseOrderPage:
+      type: object
+      required: [items, page, pageSize, totalItems]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseOrder"
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+        totalItems:
+          type: integer
+          minimum: 0
+    SupplierNotification:
+      type: object
+      required: [id, purchaseOrderId, orderNumber, eventType, summary, createdAt, readAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        purchaseOrderId:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+        eventType:
+          type: string
+          const: purchase_order_submitted
+        summary:
+          type: array
+          items:
+            type: object
+            required: [productName, quantity, unitPriceCents, lineTotalCents]
+            properties:
+              productName:
+                type: string
+              quantity:
+                type: integer
+                minimum: 1
+              unitPriceCents:
+                type: integer
+                minimum: 0
+              lineTotalCents:
+                type: integer
+                minimum: 0
+        totalCents:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: [string, "null"]
+          format: date-time
+    SupplierNotificationPage:
+      type: object
+      required: [items, page, pageSize, totalItems]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupplierNotification"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          examples: [VALIDATION_ERROR, INVALID_TRANSITION, FORBIDDEN]
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              issue:
+                type: string
