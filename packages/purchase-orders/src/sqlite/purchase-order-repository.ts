@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { calculateTotals, DomainError, validateDraftInput, type ApprovalValue, type DraftInput, type DraftUpdate, type PurchaseOrder, type PurchaseOrderLine, type PurchaseOrderStatus } from "../domain/purchase-order.js";
-import { canFulfill, transitionOrder } from "../domain/lifecycle.js";
+import { transitionOrder } from "../domain/lifecycle.js";
+import { deriveFulfillmentStatus, remainingQuantity, validateShipment, type FulfillmentShipment, type ShipmentLineInput } from "../domain/fulfillment.js";
 import { buildSubmissionNotification } from "../application/submit-purchase-order.js";
 
 type OrderRow = {
@@ -12,7 +13,7 @@ type OrderRow = {
 
 type ItemRow = {
   id: string; product_id: string; product_name_snapshot: string; sku_snapshot: string | null;
-  quantity: number; unit_price_cents: number; line_total_cents: number;
+  quantity: number; unit_price_cents: number; line_total_cents: number; received_quantity: number;
 };
 
 export interface SupplierNotificationRecord {
@@ -138,8 +139,50 @@ export class PurchaseOrderRepository {
     return this.get(id)!;
   }
 
-  fulfill(id: string): PurchaseOrder {
-    return this.mutate(id, order => transitionOrder(order, { type: "fulfill", actorId: "fulfiller", isDesignatedApprover: false }));
+  recordShipment(id: string, actorId: string, items: ShipmentLineInput[]): PurchaseOrder {
+    const operation = this.db.transaction(() => {
+      const current = this.require(id);
+      validateShipment(current, items);
+      const shipmentId = randomUUID();
+      const recordedAt = new Date().toISOString();
+      this.db.prepare(`INSERT INTO fulfillment_shipments (id, purchase_order_id, recorded_by, recorded_at)
+        VALUES (?, ?, ?, ?)`).run(shipmentId, id, actorId, recordedAt);
+      const insertLine = this.db.prepare(`INSERT INTO fulfillment_shipment_lines
+        (shipment_id, purchase_order_line_item_id, quantity) VALUES (?, ?, ?)`);
+      const updateReceived = this.db.prepare(`UPDATE purchase_order_items
+        SET received_quantity = received_quantity + ? WHERE id = ? AND purchase_order_id = ?`);
+      for (const item of items) {
+        insertLine.run(shipmentId, item.purchaseOrderLineItemId, item.quantity);
+        const changed = updateReceived.run(item.quantity, item.purchaseOrderLineItemId, id).changes;
+        if (changed !== 1) throw new DomainError("Shipment references an unknown purchase-order line item.", "validation");
+      }
+      const refreshed = this.require(id);
+      const status = deriveFulfillmentStatus(refreshed.items);
+      const now = new Date().toISOString();
+      this.db.prepare(`UPDATE purchase_orders
+        SET status = ?, fulfilled_at = ?, updated_at = ?, version = version + 1 WHERE id = ?`)
+        .run(status, status === "Fulfilled" ? now : null, now, id);
+    });
+    operation();
+    return this.get(id)!;
+  }
+
+  getFulfillmentHistory(id: string): FulfillmentShipment[] {
+    const headers = this.db.prepare(`SELECT id, purchase_order_id, recorded_by, recorded_at
+      FROM fulfillment_shipments WHERE purchase_order_id = ? ORDER BY recorded_at ASC, rowid ASC`)
+      .all(id) as Array<{ id: string; purchase_order_id: string; recorded_by: string; recorded_at: string }>;
+    const getLines = this.db.prepare(`SELECT purchase_order_line_item_id, quantity
+      FROM fulfillment_shipment_lines WHERE shipment_id = ? ORDER BY rowid ASC`);
+    return headers.map(header => ({
+      id: header.id,
+      purchaseOrderId: header.purchase_order_id,
+      recordedAt: header.recorded_at,
+      recordedBy: header.recorded_by,
+      items: getLines.all(header.id).map(line => {
+        const row = line as { purchase_order_line_item_id: string; quantity: number };
+        return { purchaseOrderLineItemId: row.purchase_order_line_item_id, quantity: row.quantity };
+      })
+    }));
   }
 
   cancel(id: string): PurchaseOrder {
@@ -209,7 +252,11 @@ export class PurchaseOrderRepository {
       id: row.id, orderNumber: row.order_number, branchId: row.branch_id, supplierId: row.supplier_id, createdBy: row.created_by,
       status: row.status, currency: "USD", createdAt: row.created_at, updatedAt: row.updated_at, submittedAt: row.submitted_at,
       fulfilledAt: row.fulfilled_at, cancelledAt: row.cancelled_at, version: row.version, totalCents: row.total_cents,
-      items: itemRows.map(item => ({ id: item.id, productId: item.product_id, productNameSnapshot: item.product_name_snapshot, skuSnapshot: item.sku_snapshot, quantity: item.quantity, unitPriceCents: item.unit_price_cents, lineTotalCents: item.line_total_cents })),
+      items: itemRows.map(item => ({
+        id: item.id, productId: item.product_id, productNameSnapshot: item.product_name_snapshot, skuSnapshot: item.sku_snapshot,
+        quantity: item.quantity, unitPriceCents: item.unit_price_cents, lineTotalCents: item.line_total_cents,
+        receivedQuantity: item.received_quantity, remainingQuantity: remainingQuantity({ quantity: item.quantity, receivedQuantity: item.received_quantity })
+      })),
       approvalDecision: decisionRow ? { approverId: decisionRow.approver_id, decision: decisionRow.decision, reason: decisionRow.reason, decidedAt: decisionRow.decided_at } : null
     };
   }

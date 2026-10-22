@@ -13,7 +13,7 @@ This model implements the entities and behaviors in [spec.md](spec.md). Branches
 | `branchId` | non-empty external identifier | Originating branch; immutable after submission. |
 | `supplierId` | non-empty external identifier | Supplier receiving order; immutable after submission. |
 | `createdBy` | actor identifier | Buyer who created/submitted the order; used to prohibit self-approval. |
-| `status` | `Draft \| Submitted \| Approved \| Fulfilled \| Cancelled` | Exactly the statuses specified by the feature. |
+| `status` | `Draft \| Submitted \| Approved \| Partially Fulfilled \| Fulfilled \| Cancelled` | Exactly the six statuses specified by the feature. |
 | `currency` | `USD` | Fixed for this feature. |
 | `createdAt`, `updatedAt` | UTC timestamps | `updatedAt` changes on a successful mutation. |
 | `submittedAt` | nullable UTC timestamp | Set once on successful submit. |
@@ -36,6 +36,7 @@ This model implements the entities and behaviors in [spec.md](spec.md). Branches
 | `quantity` | positive whole integer (assumption) | Fractional quantity precision is not specified; confirm before implementation. |
 | `unitPriceCents` | integer `>= 0` | Expected unit price; zero is allowed, negative is invalid. |
 | `lineTotalCents` | derived integer | `quantity * unitPriceCents`; calculate server-side. |
+| `receivedQuantity` | non-negative whole integer, initially zero | Cumulative quantity from immutable shipment lines; cannot exceed ordered `quantity`. Remaining quantity is derived as `quantity - receivedQuantity`. |
 
 **Validation**: At least one line is required to submit. Each product reference must exist. Reject non-positive/non-integer quantity and negative/non-integer unit price. Validate multiplication and aggregate total against supported integer range before persistence.
 
@@ -83,6 +84,25 @@ This model implements the entities and behaviors in [spec.md](spec.md). Branches
 
 **Uniqueness**: One initial email outbox record per PO submission (unique `purchaseOrderId` + `channel`). The dispatcher sends outside the database transaction. Nodemailer test/development transport captures the message; it does not prove delivery to a real mailbox.
 
+### FulfillmentShipment
+
+| Field | Type / rule | Notes |
+|---|---|---|
+| `id` | UUID, primary key | One accepted shipment receipt. |
+| `purchaseOrderId` | UUID, required FK | Parent order; history remains after cancellation. |
+| `recordedBy` | authenticated actor identifier | Supplied by server context, never by the request body. |
+| `recordedAt` | UTC timestamp | Assigned by server; chronological history uses time and stable insertion order. |
+
+### FulfillmentShipmentLine
+
+| Field | Type / rule | Notes |
+|---|---|---|
+| `shipmentId` | UUID, required FK | Parent shipment. |
+| `purchaseOrderLineItemId` | UUID, required FK | Must identify a line on the shipment's purchase order. |
+| `quantity` | positive whole integer | Quantity received in this shipment; unique once per line per shipment. |
+
+**Immutability and atomicity**: Shipment headers and lines cannot be updated or deleted. A shipment must contain at least one line; the application validates the entire body before writing, and a single database transaction inserts the header/lines, increments cumulative received quantities, and changes status. A transaction abort leaves no shipment, quantity, or status change. Database constraints/triggers prevent invalid quantities, cross-order line references, shipments after cancellation/completion, and cumulative over-receipt.
+
 ## Derived Values and Core Rules
 
 - `lineTotalCents = quantity * unitPriceCents`.
@@ -90,6 +110,8 @@ This model implements the entities and behaviors in [spec.md](spec.md). Branches
 - High-value approval required iff `totalCents > 1_000_000`; exactly $10,000.00 does not require approval.
 - Submit transaction: verify draft and references; calculate totals; set `Submitted` and `submittedAt`; create portal inbox record and email outbox record. Commit all or none. Dispatch email after commit.
 - The API and UI display derived totals from server responses. Client-calculated totals are preview-only.
+- An order is `Partially Fulfilled` iff at least one unit has been received and at least one ordered unit remains; it is `Fulfilled` iff every line has reached its ordered quantity. While status is `Partially Fulfilled`, shipment recording remains eligible. Fulfillment history is returned oldest-first and is empty when no shipment exists.
+- Cancellation from `Partially Fulfilled` preserves all shipment/received data; the remaining unreceived quantities are cancelled implicitly by terminal order status and are not represented as a separate shipment or mutable quantity. No shipment is permitted after cancellation.
 - Use database constraints where applicable (status/decision/channel enumerations, non-negative cents, positive quantity, foreign-key to PO, unique notification/outbox key) and repeat domain validation in application code for actionable errors.
 
 ## State Transitions
@@ -102,9 +124,10 @@ This model implements the entities and behaviors in [spec.md](spec.md). Branches
 | `Draft` | cancel | Authorized buyer | `Cancelled` |
 | `Submitted` | approve | Total > $10,000; designated approver; approver != submitter; no prior decision | `Approved` + `Approved` decision |
 | `Submitted` | reject | Same eligibility as approve | `Submitted` + `Rejected` decision |
-| `Submitted` | fulfill | Total <= $10,000 and no rejection; authorized fulfiller | `Fulfilled` |
-| `Approved` | fulfill | Approval decision is `Approved`; authorized fulfiller | `Fulfilled` |
-| `Submitted` / `Approved` | cancel | Authorized buyer | `Cancelled` |
+| `Submitted` | fulfill | Total <= $10,000 and no rejection; authorized fulfiller; positive quantities for known lines | `Partially Fulfilled` or `Fulfilled` based on cumulative receipts |
+| `Approved` | fulfill | Approval decision is `Approved`; authorized fulfiller; positive quantities for known lines | `Partially Fulfilled` or `Fulfilled` based on cumulative receipts |
+| `Partially Fulfilled` | fulfill | Authorized fulfiller; eligible positive quantities that do not exceed remaining amounts | `Partially Fulfilled` or `Fulfilled` |
+| `Submitted` / `Approved` / `Partially Fulfilled` | cancel | Authorized buyer | `Cancelled`; preserve shipment history/received quantities and prohibit further shipments |
 | `Fulfilled` / `Cancelled` | any lifecycle mutation | Never allowed | No change; conflict response |
 
-There is intentionally no `Rejected` purchase-order status. A rejected high-value order remains `Submitted`, but its decision record prevents fulfillment. Only `Draft` is editable. Fulfilled and cancelled orders are terminal.
+There is intentionally no `Rejected` purchase-order status. A rejected high-value order remains `Submitted`, but its decision record prevents fulfillment. Only `Draft` is editable. Fulfilled and cancelled orders are terminal. Shipment history is retained for the lifetime of the purchase order and has no update/delete operation.

@@ -8,7 +8,7 @@
 
 ## Summary
 
-Deliver purchase-order drafting, submission, status tracking, high-value approval, fulfillment/cancellation, and supplier notifications through a TypeScript REST API and responsive React UI. Keep purchase-order rules in a reusable library, use a narrow SQLite repository adapter and service for workflow/notification coordination, and make the OpenAPI document the API source of truth. Submission will atomically persist the status change, supplier-portal inbox item, and email outbox intent; email delivery occurs after commit.
+Deliver purchase-order drafting, submission, status tracking, high-value approval, multi-shipment fulfillment/cancellation, and supplier notifications through a TypeScript REST API and responsive React UI. Keep purchase-order rules in a reusable library, use a narrow SQLite repository adapter and service for workflow/notification coordination, and make the OpenAPI document the API source of truth. Submission will atomically persist the status change, supplier-portal inbox item, and email outbox intent; email delivery occurs after commit. Shipment recording is atomic, keeps an immutable chronological record of actor/time/line quantities, and derives `Partially Fulfilled` or `Fulfilled` from cumulative received quantities.
 
 The initial workspace contained no application source, dependency manifests, or established UI/API patterns. This implementation establishes the proposed greenfield layout below without claiming pre-existing conventions. See [research.md](research.md) for decisions and explicit assumptions.
 
@@ -22,7 +22,7 @@ The initial workspace contained no application source, dependency manifests, or 
 **Project Type**: Web application with API, frontend, and reusable purchase-order package.  
 **Performance Goals**: No numeric latency/throughput target is specified. Keep common list/detail/edit/transition operations interactive; establish measurable service objectives only when deployment context and expected volume are known.  
 **Constraints**: USD only; approval iff total is strictly greater than 1,000,000 cents; total excludes tax, freight, discounts, and conversion. SQLite permits a single concurrent writer, so write transactions must be short. Authentication, branch/supplier/product catalogs, and the actual supplier portal are not present in this workspace and require integration decisions.  
-**Scale/Scope**: Three user journeys (draft, submit/track, approve/complete), five PO lifecycle statuses, one final approval decision for a high-value order, and two supplier-notification channels. No user/order-volume target is specified.
+**Scale/Scope**: Three user journeys (draft, submit/track, approve/complete), six PO lifecycle statuses, one final approval decision for a high-value order, multiple shipment records per order, and two supplier-notification channels. No user/order-volume target is specified.
 
 ## Constitution Check
 

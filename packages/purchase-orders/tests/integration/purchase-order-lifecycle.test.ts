@@ -12,15 +12,15 @@ describe("SQLite purchase-order lifecycle", () => {
     const repo = new PurchaseOrderRepository(db);
     const order = repo.createDraft({ branchId: "b", supplierId: "s", createdBy: "buyer", items: [{ productId: "p", productNameSnapshot: "Part", skuSnapshot: null, quantity: 1, unitPriceCents: 1_000_001 }] });
     repo.submit(order.id, { recipient: "supplier@example.test" });
-    expect(() => repo.fulfill(order.id)).toThrow();
+    expect(() => repo.recordShipment(order.id, "fulfiller", [{ purchaseOrderLineItemId: order.items[0]!.id!, quantity: 1 }])).toThrow();
     repo.decide(order.id, "approver", true, "Approved");
-    expect(repo.fulfill(order.id).status).toBe("Fulfilled");
+    expect(repo.recordShipment(order.id, "fulfiller", [{ purchaseOrderLineItemId: order.items[0]!.id!, quantity: 1 }]).status).toBe("Fulfilled");
     expect(() => repo.cancel(order.id)).toThrow();
     const rejected = repo.createDraft({ branchId: "b", supplierId: "s", createdBy: "buyer-2", items: [{ productId: "p", productNameSnapshot: "Part", skuSnapshot: null, quantity: 1, unitPriceCents: 1_000_001 }] });
     repo.submit(rejected.id, { recipient: "supplier@example.test" });
     repo.decide(rejected.id, "approver", true, "Rejected");
     expect(repo.get(rejected.id)?.status).toBe("Submitted");
-    expect(() => repo.fulfill(rejected.id)).toThrow();
+    expect(() => repo.recordShipment(rejected.id, "fulfiller", [{ purchaseOrderLineItemId: rejected.items[0]!.id!, quantity: 1 }])).toThrow();
     expect(repo.cancel(rejected.id).status).toBe("Cancelled");
     expect(() => repo.cancel(rejected.id)).toThrow();
     closeDatabase(db);

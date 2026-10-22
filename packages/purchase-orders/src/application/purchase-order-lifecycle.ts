@@ -2,6 +2,7 @@ import { DomainError, type ApprovalValue, type PurchaseOrder } from "../domain/p
 import type { Actor } from "../ports/actor.js";
 import { defaultAuthorization, type AuthorizationPort } from "../ports/authorization.js";
 import type { PurchaseOrderRepository } from "../sqlite/purchase-order-repository.js";
+import type { FulfillmentShipment, ShipmentLineInput } from "../domain/fulfillment.js";
 
 export class PurchaseOrderLifecycle {
   constructor(private readonly repository: PurchaseOrderRepository, private readonly authorization: AuthorizationPort = defaultAuthorization) {}
@@ -13,10 +14,18 @@ export class PurchaseOrderLifecycle {
     return this.repository.decide(id, actor.id, designated, decision, reason);
   }
 
-  fulfill(actor: Actor, id: string): PurchaseOrder {
+  fulfill(actor: Actor, id: string, items: ShipmentLineInput[]): PurchaseOrder {
     if (!this.authorization.canFulfill(actor)) throw new DomainError("A fulfiller role is required.", "forbidden");
     this.requireOrder(id);
-    return this.repository.fulfill(id);
+    return this.repository.recordShipment(id, actor.id, items);
+  }
+
+  fulfillmentHistory(actor: Actor, id: string): FulfillmentShipment[] {
+    const order = this.requireOrder(id);
+    if (!this.canView(actor, order.createdBy, order.branchId, order.supplierId)) {
+      throw new DomainError("Actor is not authorized to view this purchase order.", "forbidden");
+    }
+    return this.repository.getFulfillmentHistory(id);
   }
 
   cancel(actor: Actor, id: string): PurchaseOrder {
@@ -29,5 +38,11 @@ export class PurchaseOrderLifecycle {
     const order = this.repository.get(id);
     if (!order) throw new DomainError("Purchase order was not found.", "not_found");
     return order;
+  }
+
+  private canView(actor: Actor, createdBy: string, branchId: string | null, supplierId: string | null): boolean {
+    return (actor.roles.includes("buyer") && this.authorization.canManageOrder(actor, createdBy, branchId ?? "")) ||
+      actor.roles.includes("approver") || actor.roles.includes("fulfiller") ||
+      (supplierId !== null && this.authorization.canViewSupplier(actor, supplierId));
   }
 }

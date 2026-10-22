@@ -45,6 +45,23 @@ function parseDraftBody(value: unknown): { branchId?: string | null; supplierId?
   };
 }
 
+function parseShipmentBody(value: unknown): Array<{ purchaseOrderLineItemId: string; quantity: number }> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new DomainError("Request body must be a JSON object.");
+  const body = value as Record<string, unknown>;
+  if (Object.keys(body).some(key => key !== "items") || !Array.isArray(body.items) || body.items.length === 0) {
+    throw new DomainError("A shipment must contain a non-empty items array.");
+  }
+  return body.items.map((value): { purchaseOrderLineItemId: string; quantity: number } => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new DomainError("Each shipment line must be a JSON object.");
+    const item = value as Record<string, unknown>;
+    if (Object.keys(item).some(key => !["purchaseOrderLineItemId", "quantity"].includes(key)) ||
+      typeof item.purchaseOrderLineItemId !== "string" || typeof item.quantity !== "number") {
+      throw new DomainError("Each shipment line requires purchaseOrderLineItemId and quantity.");
+    }
+    return { purchaseOrderLineItemId: item.purchaseOrderLineItemId, quantity: item.quantity };
+  });
+}
+
 export function createPurchaseOrdersRouter(options: PurchaseOrdersRouterOptions): Router {
   const router = Router();
   const { repository, catalog } = options;
@@ -57,7 +74,7 @@ export function createPurchaseOrdersRouter(options: PurchaseOrdersRouterOptions)
     try {
       const actor = requireActor(res.locals.actor);
       const status = typeof req.query.status === "string" ? req.query.status as PurchaseOrderStatus : undefined;
-      if (status && !["Draft", "Submitted", "Approved", "Fulfilled", "Cancelled"].includes(status)) throw new DomainError("Status filter is not supported.");
+      if (status && !["Draft", "Submitted", "Approved", "Partially Fulfilled", "Fulfilled", "Cancelled"].includes(status)) throw new DomainError("Status filter is not supported.");
       const page = Number(req.query.page ?? 1);
       const pageSize = Number(req.query.pageSize ?? 25);
       if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
@@ -133,7 +150,16 @@ export function createPurchaseOrdersRouter(options: PurchaseOrdersRouterOptions)
   router.post("/:purchaseOrderId/fulfill", (req, res, next) => {
     try {
       const actor = requireActor(res.locals.actor);
-      res.json(toPurchaseOrderResponse(lifecycle.fulfill(actor, req.params.purchaseOrderId)));
+      res.json(toPurchaseOrderResponse(lifecycle.fulfill(actor, req.params.purchaseOrderId, parseShipmentBody(req.body))));
+    } catch (error) { next(error); }
+  });
+
+  router.get("/:purchaseOrderId/fulfillment-history", (req, res, next) => {
+    try {
+      const actor = requireActor(res.locals.actor);
+      const order = repository.get(req.params.purchaseOrderId);
+      if (!order) throw new DomainError("Purchase order was not found.", "not_found");
+      res.json({ purchaseOrderId: order.id, shipments: lifecycle.fulfillmentHistory(actor, order.id) });
     } catch (error) { next(error); }
   });
 

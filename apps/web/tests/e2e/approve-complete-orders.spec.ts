@@ -14,18 +14,19 @@ test("approval controls show only when a designated development approver is sele
   const orderRow = page.getByRole("button", { name: new RegExp(orderNumber) });
   await orderRow.click();
   await expect(page.locator(".order-detail").getByText("Approved", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Mark fulfilled" }).click();
+  await page.getByLabel("Received quantity for widget-demo").fill("2");
+  await page.getByRole("button", { name: "Record shipment" }).click();
   await expect(page.locator(".order-detail").getByText("Fulfilled", { exact: true })).toBeVisible();
 });
 
-test("rejected high-value orders cannot be fulfilled and may be cancelled by their buyer", async ({ page }) => {
+test("rejected high-value orders cannot receive shipments and may be cancelled by their buyer", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Quantity").fill("1");
   await page.getByLabel("Unit price (cents)").fill("1000001");
   await page.getByRole("button", { name: "Create draft" }).click();
   const orderNumber = await page.locator("#order-detail-heading").innerText();
   await page.getByRole("button", { name: "Submit order" }).click();
-  await expect(page.getByRole("button", { name: "Mark fulfilled" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Record shipment" })).toHaveCount(0);
 
   const listedOrders = await page.request.get("http://127.0.0.1:3000/api/v1/purchase-orders", {
     headers: { Authorization: "Bearer dev-buyer" }
@@ -34,7 +35,8 @@ test("rejected high-value orders cannot be fulfilled and may be cancelled by the
   const target = pageBody.items.find(order => order.orderNumber === orderNumber);
   if (!target) throw new Error("New high-value order was not returned by the API.");
   const deniedFulfillment = await page.request.post(`http://127.0.0.1:3000/api/v1/purchase-orders/${target.id}/fulfill`, {
-    headers: { Authorization: "Bearer dev-fulfiller" }
+    headers: { Authorization: "Bearer dev-fulfiller" },
+    data: { items: [{ purchaseOrderLineItemId: "unknown-line", quantity: 1 }] }
   });
   expect(deniedFulfillment.status()).toBe(409);
 

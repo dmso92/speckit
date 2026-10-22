@@ -1,5 +1,6 @@
 export * from "./domain/purchase-order.js";
 export * from "./domain/lifecycle.js";
+export * from "./domain/fulfillment.js";
 export * from "./ports/actor.js";
 export * from "./ports/authorization.js";
 export * from "./ports/catalog.js";

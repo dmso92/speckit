@@ -4,7 +4,7 @@ import { usePurchaseOrders } from "./state/PurchaseOrderContext.js";
 import { ApprovalQueuePage } from "./features/purchase-orders/ApprovalQueuePage.js";
 import { PurchaseOrderDetailPage } from "./features/purchase-orders/PurchaseOrderDetailPage.js";
 import { PurchaseOrderListPage } from "./features/purchase-orders/PurchaseOrderListPage.js";
-import { formatMoney, purchaseOrderApi, type PurchaseOrder, type SupplierNotification } from "./features/purchase-orders/api.js";
+import { formatMoney, purchaseOrderApi, type FulfillmentShipment, type PurchaseOrder, type ShipmentLineInput, type SupplierNotification } from "./features/purchase-orders/api.js";
 import { SupplierNotificationsPage } from "./features/purchase-orders/SupplierNotificationsPage.js";
 import "./features/purchase-orders/purchase-orders.css";
 
@@ -12,6 +12,7 @@ export function App() {
   const actor = useActor();
   const { orders, setOrders } = usePurchaseOrders();
   const [notifications, setNotifications] = useState<SupplierNotification[]>([]);
+  const [fulfillmentHistory, setFulfillmentHistory] = useState<FulfillmentShipment[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [branchId, setBranchId] = useState("branch-demo");
   const [supplierId, setSupplierId] = useState("supplier-demo");
@@ -47,6 +48,17 @@ export function App() {
       unitPriceCents: String(item.unitPriceCents)
     })));
   }, [selected]);
+  useEffect(() => {
+    if (!selected || !actor.token || actor.kind === "supplier") {
+      setFulfillmentHistory([]);
+      return;
+    }
+    let active = true;
+    void purchaseOrderApi.fulfillmentHistory(actor.token, selected.id)
+      .then(result => { if (active) setFulfillmentHistory(result.shipments); })
+      .catch(() => { if (active) setFulfillmentHistory([]); });
+    return () => { active = false; };
+  }, [selected?.id, actor.token, actor.kind, orders]);
 
   async function runAction(action: () => Promise<unknown>) {
     setBusy(true);
@@ -122,12 +134,12 @@ export function App() {
         </section>
         <section className="panel">
           <h2>Order review</h2>
-          {selected ? <PurchaseOrderDetailPage order={selected} actorKind={actor.kind === "fulfiller" ? "fulfiller" : "buyer"}
+          {selected ? <PurchaseOrderDetailPage order={selected} actorKind={actor.kind === "fulfiller" ? "fulfiller" : "buyer"} history={fulfillmentHistory}
             onSubmit={() => actor.token && void runAction(() => purchaseOrderApi.submit(actor.token!, selected.id))}
             onEdit={() => actor.token && void runAction(() => purchaseOrderApi.update(actor.token!, selected.id, {
               branchId, supplierId, items: lines.map(line => ({ productId: line.productId, quantity: Number(line.quantity), unitPriceCents: Number(line.unitPriceCents) }))
             }))}
-            onFulfill={() => actor.token && void runAction(() => purchaseOrderApi.fulfill(actor.token!, selected.id))}
+            onFulfill={(items: ShipmentLineInput[]) => actor.token && void runAction(() => purchaseOrderApi.fulfill(actor.token!, selected.id, items))}
             onCancel={() => actor.token && void runAction(() => purchaseOrderApi.cancel(actor.token!, selected.id))}
           /> : <p className="empty-state">Select an order to review its details.</p>}
         </section>

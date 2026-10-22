@@ -27,6 +27,12 @@
 .notification-list > li { padding: 1rem .3rem; }
 .notification-list ul { padding-left: 1.3rem; }
 .approval-card { padding: 1rem 0; border-top: 1px solid #dce3e7; }
+.shipment-entry { display: grid; gap: .75rem; margin: 1rem 0; padding: 1rem; border: 1px solid #dce3e7; border-radius: .5rem; }
+.shipment-entry label { display: grid; gap: .35rem; max-width: 24rem; }
+.shipment-entry input { padding: .55rem; border: 1px solid #aebdc5; border-radius: .35rem; }
+.fulfillment-history { margin-top: 1.5rem; }
+.fulfillment-history ol > li { padding: .5rem 0; }
+.cancelled-remainder { color: #725110; background: #fff3d6; padding: .6rem .8rem; border-radius: .35rem; }
 @media (max-width: 760px) {
   .app-shell { padding: 1rem .8rem 2rem; }
   .app-header { align-items: flex-start; flex-direction: column; }

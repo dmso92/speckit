@@ -7,24 +7,24 @@ const cleanups: Array<() => void> = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
 
 describe("approval and lifecycle REST contract", () => {
-  it("enforces strict high-value threshold and independent approval", async () => {
-    const testApp = createTestApplication();
-    cleanups.push(testApp.cleanup);
+  it("enforces strict high-value threshold and independent approval before receiving", async () => {
+    const testApp = createTestApplication(); cleanups.push(testApp.cleanup);
     const app = createApp(testApp.dependencies);
     const created = await request(app).post("/api/v1/purchase-orders").set("Authorization", "Bearer buyer-test").send({
       branchId: "branch-demo", supplierId: "supplier-demo",
       items: [{ productId: "high-value", quantity: 1, unitPriceCents: 1_000_001 }]
     }).expect(201);
     await request(app).post(`/api/v1/purchase-orders/${created.body.id}/submit`).set("Authorization", "Bearer buyer-test").expect(200);
-    await request(app).post(`/api/v1/purchase-orders/${created.body.id}/fulfill`).set("Authorization", "Bearer fulfiller-test").expect(409);
+    const shipment = { items: [{ purchaseOrderLineItemId: created.body.items[0].id, quantity: 1 }] };
+    await request(app).post(`/api/v1/purchase-orders/${created.body.id}/fulfill`).set("Authorization", "Bearer fulfiller-test").send(shipment).expect(409);
     await request(app).post(`/api/v1/purchase-orders/${created.body.id}/approval-decisions`).set("Authorization", "Bearer buyer-test").send({ decision: "Approved" }).expect(403);
     await request(app).post(`/api/v1/purchase-orders/${created.body.id}/approval-decisions`).set("Authorization", "Bearer approver-test").send({ decision: "Approved" }).expect(200);
-    await request(app).post(`/api/v1/purchase-orders/${created.body.id}/fulfill`).set("Authorization", "Bearer fulfiller-test").expect(200);
+    await request(app).post(`/api/v1/purchase-orders/${created.body.id}/fulfill`).set("Authorization", "Bearer fulfiller-test").send(shipment)
+      .expect(200).expect(({ body }) => expect(body.status).toBe("Fulfilled"));
   });
 
   it("allows exact-threshold fulfillment and keeps a rejected order unfulfilled until cancellation", async () => {
-    const testApp = createTestApplication();
-    cleanups.push(testApp.cleanup);
+    const testApp = createTestApplication(); cleanups.push(testApp.cleanup);
     const app = createApp(testApp.dependencies);
     const buyer = "Bearer buyer-test";
     const fulfiller = "Bearer fulfiller-test";
@@ -33,7 +33,9 @@ describe("approval and lifecycle REST contract", () => {
       items: [{ productId: "exact-threshold", quantity: 1, unitPriceCents: 1_000_000 }]
     }).expect(201);
     await request(app).post(`/api/v1/purchase-orders/${low.body.id}/submit`).set("Authorization", buyer).expect(200);
-    await request(app).post(`/api/v1/purchase-orders/${low.body.id}/fulfill`).set("Authorization", fulfiller).expect(200).expect(({ body }) => expect(body.status).toBe("Fulfilled"));
+    await request(app).post(`/api/v1/purchase-orders/${low.body.id}/fulfill`).set("Authorization", fulfiller)
+      .send({ items: [{ purchaseOrderLineItemId: low.body.items[0].id, quantity: 1 }] }).expect(200)
+      .expect(({ body }) => expect(body.status).toBe("Fulfilled"));
 
     const high = await request(app).post("/api/v1/purchase-orders").set("Authorization", buyer).send({
       branchId: "branch-demo", supplierId: "supplier-demo",
@@ -44,7 +46,8 @@ describe("approval and lifecycle REST contract", () => {
       .set("Authorization", "Bearer approver-test").send({ decision: "Rejected" }).expect(200);
     expect(rejected.body.status).toBe("Submitted");
     expect(rejected.body.approvalDecision.decision).toBe("Rejected");
-    await request(app).post(`/api/v1/purchase-orders/${high.body.id}/fulfill`).set("Authorization", fulfiller).expect(409);
+    await request(app).post(`/api/v1/purchase-orders/${high.body.id}/fulfill`).set("Authorization", fulfiller)
+      .send({ items: [{ purchaseOrderLineItemId: high.body.items[0].id, quantity: 1 }] }).expect(409);
     await request(app).get(`/api/v1/purchase-orders/${high.body.id}`).set("Authorization", buyer).expect(200).expect(({ body }) => expect(body.status).toBe("Submitted"));
     await request(app).post(`/api/v1/purchase-orders/${high.body.id}/cancel`).set("Authorization", buyer).expect(200).expect(({ body }) => expect(body.status).toBe("Cancelled"));
   });

@@ -4,8 +4,23 @@ export interface PurchaseOrderItem {
   productName: string;
   sku: string | null;
   quantity: number;
+  receivedQuantity: number;
+  remainingQuantity: number;
   unitPriceCents: number;
   lineTotalCents: number;
+}
+
+export interface ShipmentLineInput {
+  purchaseOrderLineItemId: string;
+  quantity: number;
+}
+
+export interface FulfillmentShipment {
+  id: string;
+  purchaseOrderId: string;
+  recordedAt: string;
+  recordedBy: string;
+  items: ShipmentLineInput[];
 }
 
 export interface PurchaseOrder {
@@ -14,7 +29,7 @@ export interface PurchaseOrder {
   branchId: string | null;
   supplierId: string | null;
   createdBy: string;
-  status: "Draft" | "Submitted" | "Approved" | "Fulfilled" | "Cancelled";
+  status: "Draft" | "Submitted" | "Approved" | "Partially Fulfilled" | "Fulfilled" | "Cancelled";
   totalCents: number;
   items: PurchaseOrderItem[];
   approvalDecision: { decision: "Approved" | "Rejected"; approverId: string; decidedAt: string; reason: string | null } | null;
@@ -58,8 +73,11 @@ export const purchaseOrderApi = {
   decide(token: string, id: string, decision: "Approved" | "Rejected") {
     return api<PurchaseOrder>(`/purchase-orders/${id}/approval-decisions`, token, { method: "POST", body: JSON.stringify({ decision }) });
   },
-  fulfill(token: string, id: string) {
-    return api<PurchaseOrder>(`/purchase-orders/${id}/fulfill`, token, { method: "POST" });
+  fulfill(token: string, id: string, items: ShipmentLineInput[]) {
+    return api<PurchaseOrder>(`/purchase-orders/${id}/fulfill`, token, { method: "POST", body: JSON.stringify({ items }) });
+  },
+  fulfillmentHistory(token: string, id: string) {
+    return api<{ purchaseOrderId: string; shipments: FulfillmentShipment[] }>(`/purchase-orders/${id}/fulfillment-history`, token);
   },
   cancel(token: string, id: string) {
     return api<PurchaseOrder>(`/purchase-orders/${id}/cancel`, token, { method: "POST" });

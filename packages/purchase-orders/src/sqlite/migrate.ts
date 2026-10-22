@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
 
-const names = ["001_purchase_orders.sql", "002_submission_notifications.sql", "003_approval_decisions.sql"];
+const names = ["001_purchase_orders.sql", "002_submission_notifications.sql", "003_approval_decisions.sql", "004_partial_fulfillment.sql"];
 
 export function migrateDatabase(db: Database.Database): void {
   db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY NOT NULL, applied_at TEXT NOT NULL)");
@@ -15,10 +15,18 @@ export function migrateDatabase(db: Database.Database): void {
     if (alreadyApplied) continue;
     const path = candidates.map(dir => resolve(dir, name)).find(existsSync);
     if (!path) throw new Error(`SQLite migration file is missing: ${name}`);
+    const sql = readFileSync(path, "utf8");
+    const requiresForeignKeyRebuild = /^--\s*migration:\s*foreign_keys=off\s*$/im.test(sql);
     const apply = db.transaction(() => {
-      db.exec(readFileSync(path, "utf8"));
+      db.exec(sql);
+      if (requiresForeignKeyRebuild) {
+        const violations = db.pragma("foreign_key_check") as Array<Record<string, unknown>>;
+        if (violations.length > 0) throw new Error(`SQLite migration ${name} would violate existing foreign keys.`);
+      }
       db.prepare("INSERT INTO schema_migrations(name, applied_at) VALUES (?, ?)").run(name, new Date().toISOString());
     });
-    apply();
+    if (requiresForeignKeyRebuild) db.pragma("foreign_keys = OFF");
+    try { apply(); }
+    finally { if (requiresForeignKeyRebuild) db.pragma("foreign_keys = ON"); }
   }
 }

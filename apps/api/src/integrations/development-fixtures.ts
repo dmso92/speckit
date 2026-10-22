@@ -5,7 +5,8 @@ export const developmentActors: Record<string, Actor> = {
   "dev-buyer": { id: "dev-buyer", roles: ["buyer"], branchIds: ["branch-demo"], supplierIds: [] },
   "dev-approver": { id: "dev-approver", roles: ["approver"], branchIds: [], supplierIds: [] },
   "dev-fulfiller": { id: "dev-fulfiller", roles: ["fulfiller"], branchIds: [], supplierIds: [] },
-  "dev-supplier": { id: "dev-supplier", roles: ["supplier"], branchIds: [], supplierIds: ["supplier-demo"] }
+  "dev-supplier": { id: "dev-supplier", roles: ["supplier"], branchIds: [], supplierIds: ["supplier-demo"] },
+  "dev-other-supplier": { id: "dev-other-supplier", roles: ["supplier"], branchIds: [], supplierIds: ["supplier-other"] }
 };
 
 export const developmentFixtureActorResolver: ActorResolver = async authorization => {

@@ -14,6 +14,11 @@ export function canFulfill(order: PurchaseOrder): boolean {
   return !requiresApproval(order.totalCents) && order.approvalDecision?.decision !== "Rejected";
 }
 
+export function canReceiveShipment(order: PurchaseOrder): boolean {
+  if (order.status === "Partially Fulfilled") return true;
+  return canFulfill(order);
+}
+
 export function transitionOrder(order: PurchaseOrder, command: LifecycleCommand): PurchaseOrder {
   const now = new Date().toISOString();
   let status: PurchaseOrderStatus = order.status;
@@ -32,7 +37,7 @@ export function transitionOrder(order: PurchaseOrder, command: LifecycleCommand)
     if (!canFulfill(order)) throw new DomainError("Order is not eligible for fulfillment; required approval may be missing or rejected.", "conflict");
     status = "Fulfilled";
   } else {
-    if (!["Draft", "Submitted", "Approved"].includes(order.status)) throw new DomainError("Order cannot be cancelled from its current state.", "conflict");
+    if (!["Draft", "Submitted", "Approved", "Partially Fulfilled"].includes(order.status)) throw new DomainError("Order cannot be cancelled from its current state.", "conflict");
     status = "Cancelled";
   }
   return {

@@ -15,6 +15,8 @@ export function toPurchaseOrderResponse(order: PurchaseOrder) {
       productName: item.productNameSnapshot,
       sku: item.skuSnapshot,
       quantity: item.quantity,
+      receivedQuantity: item.receivedQuantity ?? 0,
+      remainingQuantity: item.remainingQuantity ?? item.quantity - (item.receivedQuantity ?? 0),
       unitPriceCents: item.unitPriceCents,
       lineTotalCents: item.lineTotalCents
     })),

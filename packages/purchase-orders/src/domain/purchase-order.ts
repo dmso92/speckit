@@ -1,4 +1,4 @@
-export type PurchaseOrderStatus = "Draft" | "Submitted" | "Approved" | "Fulfilled" | "Cancelled";
+export type PurchaseOrderStatus = "Draft" | "Submitted" | "Approved" | "Partially Fulfilled" | "Fulfilled" | "Cancelled";
 export type ApprovalValue = "Approved" | "Rejected";
 
 export interface DraftLineInput {
@@ -14,6 +14,8 @@ export interface PurchaseOrderLine extends DraftLineInput {
   productNameSnapshot: string;
   skuSnapshot: string | null;
   lineTotalCents: number;
+  receivedQuantity?: number;
+  remainingQuantity?: number;
 }
 
 export interface DraftInput {
