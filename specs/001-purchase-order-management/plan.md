@@ -1,6 +1,6 @@
 # Implementation Plan: Purchase Order Management
 
-**Branch**: `001-purchase-order-management` (planned name; workspace is not a Git repository)  
+**Branch**: `001-purchase-order-management` (planned feature name)
 **Date**: 2026-10-21  
 **Spec**: [spec.md](spec.md)
 
@@ -10,7 +10,7 @@
 
 Deliver purchase-order drafting, submission, status tracking, high-value approval, fulfillment/cancellation, and supplier notifications through a TypeScript REST API and responsive React UI. Keep purchase-order rules in a reusable library, use a narrow SQLite repository adapter and service for workflow/notification coordination, and make the OpenAPI document the API source of truth. Submission will atomically persist the status change, supplier-portal inbox item, and email outbox intent; email delivery occurs after commit.
 
-The workspace contains no application source, dependency manifests, or established UI/API patterns. Therefore the structure below is a proposed greenfield layout, not a claim about existing conventions. See [research.md](research.md) for decisions and explicit assumptions.
+The initial workspace contained no application source, dependency manifests, or established UI/API patterns. This implementation establishes the proposed greenfield layout below without claiming pre-existing conventions. See [research.md](research.md) for decisions and explicit assumptions.
 
 ## Technical Context
 

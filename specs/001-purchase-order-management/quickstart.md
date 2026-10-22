@@ -1,11 +1,11 @@
 # Quickstart: Purchase Order Management Validation
 
-This guide targets the planned implementation. The current workspace contains no app source, `package.json`, lockfile, or runtime scripts, so these commands become executable when the app is scaffolded; they cannot run against this Spec Kit-only workspace yet. Script names and local ports are proposed defaults to standardize during implementation.
+This guide targets the standalone workspace implementation. The host identity, catalog, supplier portal, and production SMTP integrations are still absent and must be provided before production use. Node/npm are unavailable in the present environment, so commands below have not been executed here.
 
 ## Prerequisites
 
-- Node.js 22.12+ and npm (confirm the host application's supported runtime before setup).
-- SQLite support for the selected driver; integration tests use a temporary file-backed SQLite database.
+- Node.js 22.12.0 (selected in `.nvmrc`) and npm. Verify this against deployment policy before adopting it in a host environment.
+- Native `better-sqlite3` support for the selected Node/platform combination; this could not be verified in the current environment.
 - Chromium installed for Playwright: `npx playwright install chromium`.
 - Development/test identities for a buyer, independent designated approver, fulfiller, and supplier.
 - Test catalog entries for one branch, one supplier with a test email, and products. These come from the host catalog integration/fixtures; this feature does not own catalog records.
@@ -14,7 +14,7 @@ This guide targets the planned implementation. The current workspace contains no
 ## Start and Inspect
 
 ```sh
-npm ci
+npm install
 npm run db:migrate
 npm run dev
 ```
@@ -26,21 +26,21 @@ Proposed local URLs:
 - Swagger UI: `http://localhost:3000/api-docs`
 - OpenAPI source: `specs/001-purchase-order-management/contracts/openapi.yaml`
 
-The host application's authentication and catalog integration may require a local development profile. Never disable server-side authorization to make a validation scenario pass.
+For a visible local fixture demonstration, run `npm run dev:fixtures`; it enables synthetic development actors/catalog and Nodemailer capture. It must not run in production. Without host adapters, normal startup deliberately fails closed for identity and catalog access. Never disable server-side authorization to make a validation scenario pass.
 
 ## Contract-First Check
 
-Before implementing API routes, add contract tests from [openapi.yaml](contracts/openapi.yaml), then run:
+The contract test files were authored from [openapi.yaml](contracts/openapi.yaml) before route implementation. Run:
 
 ```sh
 npm run test:contract
 ```
 
-**Expected before implementation**: the newly written tests fail for the intended reason (missing operations/behavior), not because the OpenAPI document cannot be read or the test harness is broken. After implementation, the same command passes and validates request/response schemas and status/error behavior.
+The contract-first test files were authored before production implementation. Run the suite to validate the OpenAPI document and API behavior; this environment could not execute it, so passing status and the intended pre-implementation failure reason remain unverified.
 
 ## API Scenarios
 
-Use test tokens issued by the configured development identity provider and catalog IDs seeded for the test environment. Set `BUYER_TOKEN`, `APPROVER_TOKEN`, and `SUPPLIER_TOKEN` in the shell from your local test identity provider; do not put token values in this guide or source control.
+Use test tokens from the configured host identity provider and seeded catalog identifiers. With `npm run dev:fixtures`, use the synthetic bearer fixture identities described in the README; do not use production tokens in local testing.
 
 ```sh
 API=http://localhost:3000/api/v1
@@ -48,11 +48,11 @@ curl -i -X POST "$API/purchase-orders" \
   -H "Authorization: Bearer $BUYER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "branchId": "test-branch-id",
-    "supplierId": "test-supplier-id",
+    "branchId": "branch-demo",
+    "supplierId": "supplier-demo",
     "items": [
-      {"productId":"test-product-a","quantity":2,"unitPriceCents":1250},
-      {"productId":"test-product-b","quantity":1,"unitPriceCents":4000}
+      {"productId":"widget-demo","quantity":2,"unitPriceCents":1250},
+      {"productId":"widget-alt","quantity":1,"unitPriceCents":4000}
     ]
   }'
 ```
@@ -64,7 +64,7 @@ curl -i -X POST "$API/purchase-orders/${PO_ID}/submit" \
   -H "Authorization: Bearer $BUYER_TOKEN"
 ```
 
-**Expected**: `200 OK`, `status: Submitted`, one supplier portal inbox item, and one email outbox record. The captured Nodemailer message includes the PO identifier and item summary. A supplier-scoped `GET /api/v1/supplier-notifications` returns the portal item; a different supplier identity must not see it.
+**Expected**: `200 OK`, `status: Submitted`, one supplier portal inbox item, and one email outbox record. The Nodemailer capture occurs asynchronously after the database commit. A supplier-scoped `GET /api/v1/supplier-notifications` returns the portal item; a different supplier identity must not see it.
 
 To validate high-value approval, create a separate PO whose line-item total is `$10,000.01` (`totalCents: 1000001`), then submit it:
 

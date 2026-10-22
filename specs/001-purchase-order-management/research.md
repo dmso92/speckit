@@ -74,3 +74,9 @@
 - React `createContext` API: <https://react.dev/reference/react/createContext>
 - Vitest getting started: <https://vitest.dev/guide/>
 - Playwright Test introduction: <https://playwright.dev/docs/intro>
+
+## Standalone Scaffold Assumptions
+
+The user confirmed that this Spec Kit-only workspace should host a standalone application. The implementation now records Node.js 22.12.0 in `.nvmrc` and selects `better-sqlite3`, npm workspaces, Express 5, React/Vite, Vitest, and Playwright as package defaults. These versions and native SQLite compatibility have not been executed or confirmed because Node.js/npm are not installed in the current environment.
+
+Authentication and catalog remain provider ports; the production entry point intentionally resolves no actor/catalog data until a host adapter is connected. Development fixtures are synthetic, visible, and opt-in. The persisted supplier inbox API is the local portal integration surface described in the original assumption; this does not establish that an external supplier portal consumes it.

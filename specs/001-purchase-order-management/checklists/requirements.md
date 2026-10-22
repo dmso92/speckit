@@ -6,7 +6,7 @@
 
 ## Content Quality
 
-- [x] No implementation details (languages, frameworks, APIs)
+- [x] No unnecessary implementation details (the user-requested fulfillment-history endpoint is specified explicitly)
 - [x] Focused on user value and business needs
 - [x] Written for non-technical stakeholders
 - [x] All mandatory sections completed
@@ -27,10 +27,10 @@
 - [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
 - [x] Feature meets measurable outcomes defined in Success Criteria
-- [x] No implementation details leak into specification
+- [x] No unnecessary implementation details leak into specification beyond the user-requested endpoint and shipment-recording operation
 
 ## Notes
 
-- Reviewed against the specification on 2026-10-21, including clarification decisions on self-approval, approver scope, and supplier notification channels. All criteria pass; the specification has no open clarification markers.
-- Purchase-order lifecycle, threshold, approval, and notification assumptions are documented in the spec. Constitution-level implementation constraints are not repeated in this business-facing specification.
+- Reviewed against the specification on 2026-10-21, including clarification decisions on self-approval, approver scope, supplier notification channels, shipment quantity accumulation, partial-receipt cancellation, and reuse of the existing fulfill operation to record shipments. All criteria pass; the specification has no open clarification markers.
+- Purchase-order lifecycle, threshold, approval, notification, partial-fulfillment, and cancellation assumptions are documented in the spec. The specifically requested fulfillment-history endpoint is named; other implementation details and constitution-level constraints are not repeated in this business-facing specification.
 - Items marked incomplete require spec updates before `/speckit.clarify` or `/speckit.plan`
